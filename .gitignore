@@ -1,0 +1,457 @@
+//-------------------------------------------------------------------------------------
+//                        Autor: Konrad Peschka
+//                        Entidad: Kaiwa Technology
+//                        Fecha: Junio 2016
+//-------------------------------------------------------------------------------------
+
+
+//------------------------------------Declaracion de Librerias-------------------------------------------------------
+
+#include <Servo.h>
+#include <SoftwareSerial.h>
+
+//-------------------------Descomentar para deleccionar el puerto del bluetooht----------------------
+//SoftwareSerial BTserial(2, 3); // RX | TX que van conectados cruzados al Bluetooht
+//---------------------------------------------------------------------------------------------------
+
+Servo servo_base;                  //defino los alias de cada servo
+Servo servo_hombro;
+Servo servo_codo;
+Servo servo_munhieca;
+Servo servo_pinza;
+
+#define debug                  //comentando o descomentando esta linea activo el codigo para debug
+
+//------------------------------------Declaraciones de variables-------------------------------------------------
+
+int variable_control=0;            //es la variable que uso para saber que boton fue pulsado         
+const int margen_joystick=80;      //margen que tiene el joystick para saber si esta corrido del centro
+const int max_filas=25;             //defino la cantidad maxima de pasos que deseo guardar
+
+const int limite_superior=180;         //limites superiores de todos los servos
+const int limite_inferior=50;          //limite inferior de todos los servos
+
+
+//--------------------------Modificando esta variable ajustamos la velocidad------------------------------------
+const int vel_movimiento=1;           //velocidad de movimiento de todos los servos
+//--------------------------------------------------------------------------------------------------------------
+
+int variable_servo_base=100;          //defino las variables y los valores que tendran en el arranque
+int variable_servo_hombro=100;
+int variable_servo_codo=100;
+int variable_servo_munhieca=100;
+int variable_servo_pinza=100;
+
+int matriz_posiciones[max_filas][5];      //defino la matriz donde voy a guardar los pasos
+
+int aux_fila=0;
+int aux_fila2=0;
+int modo_carga=0;
+
+#ifdef debug
+const int tiempo_debug=10;
+#endif
+
+//-------------------------------------------------------------------------------------
+//              Setup donde se inicializan librerias, pines y demas
+//-------------------------------------------------------------------------------------
+
+void setup()
+{ 
+  
+#ifdef debug
+ Serial.begin(9600);
+#endif
+          
+servo_base.attach(4);      //defino pines de los servos
+servo_hombro.attach(5);
+servo_codo.attach(6);
+servo_munhieca.attach(7);
+servo_pinza.attach(8);
+
+movimiento_servos();
+
+reset_matriz();  //cada vez que reinicio el arduino, reseteo por la sdudas la matriz de puntos de secuencia
+
+//-----------------------------Descomentar para usarlo con Bluetooht----------------------------------
+//BTserial.begin(38400);  //puerto abierto para el bluetooht
+//----------------------------------------------------------------------------------------------------
+
+
+}
+
+
+//-------------------------------------------------------------------------------------
+//                    Loop o programa principal
+//-------------------------------------------------------------------------------------
+
+void loop()
+{
+  ajuste_variable_servos(); 
+  movimiento_servos();     
+}
+
+//------------------------------------------------------------------------------------------------------
+//                                      Declaracion de funciones
+//-----------------------------------------------------------------------------------------------------
+
+
+//--------------------------------Ajuste variables servos-----------------------------------------------------
+
+void ajuste_variable_servos(void)
+{
+  switch (lectura_bluetooht()) 
+  {
+    
+    case 1:    //Movimiento Base
+      variable_servo_base=variable_servo_base+vel_movimiento;
+      limites_servo();
+      #ifdef debug
+      Serial.println("Base1");
+      delay(tiempo_debug);
+      #endif
+    break;
+      
+    case 2:    //Movimiento Base
+      variable_servo_base=variable_servo_base-vel_movimiento;
+      limites_servo();
+      #ifdef debug
+      Serial.println("Base2");
+      delay(tiempo_debug);
+      #endif
+    break;
+
+      
+    case 3:   //Movimiento Hombro
+      variable_servo_hombro=variable_servo_hombro+vel_movimiento;
+      limites_servo();
+      #ifdef debug
+      Serial.println("Hombro1");
+      delay(tiempo_debug);
+      #endif
+    break;
+      
+    case 4:    //Movimiento Hombro
+      variable_servo_hombro=variable_servo_hombro-vel_movimiento;
+      limites_servo();
+      #ifdef debug
+      Serial.println("Hombro2");
+      delay(tiempo_debug);
+      #endif
+    break;
+    
+    case 5:    //Movimiento Codo
+      variable_servo_codo=variable_servo_codo+vel_movimiento;
+      limites_servo();
+      #ifdef debug
+      Serial.println("Codo1");
+      delay(tiempo_debug);
+      #endif
+    break;
+      
+    case 6:   //Movimiento Codo
+      variable_servo_codo=variable_servo_codo-vel_movimiento;
+      limites_servo();
+      #ifdef debug
+      Serial.println("Codo2");
+      delay(tiempo_debug);
+      #endif
+    break;     
+
+    case 7:    //Movimiento Munhieca
+      variable_servo_munhieca=variable_servo_munhieca+vel_movimiento;
+      limites_servo();
+      #ifdef debug
+      Serial.println("Munhieca1");
+      delay(tiempo_debug);
+      #endif
+    break;
+      
+    case 8:    //Movimiento Munhieca
+      variable_servo_munhieca=variable_servo_munhieca-vel_movimiento;
+      limites_servo();
+      #ifdef debug
+      Serial.println("Munhieca2");
+      delay(tiempo_debug);
+      #endif
+    break;
+
+    case 9:    //Movimiento Pinza
+      variable_servo_pinza=variable_servo_pinza+vel_movimiento;
+      limites_servo();
+      #ifdef debug
+      Serial.println("Pinza1");
+      delay(tiempo_debug);
+      #endif
+    break;
+
+
+    case 10:    //Movimiento Pinza
+      variable_servo_pinza=variable_servo_pinza-vel_movimiento;   
+      limites_servo();
+      #ifdef debug
+      Serial.println("Pinza2");
+      delay(tiempo_debug);
+      #endif
+    break;
+      
+    case 11:    //Inicio Guardado Secuencia
+      #ifdef debug
+      Serial.println("Inicio Guardado");
+      delay(tiempo_debug);
+      #endif
+      reset_matriz();
+      modo_carga=1;
+      aux_fila=0;
+      aux_fila2=0;
+    break; 
+         
+    case 12:    //Guardando puntos
+      #ifdef debug
+      Serial.println("Guardando puntos");
+      delay(tiempo_debug);
+      #endif
+      if(modo_carga==1)             //solo carga si el modo carga esta activo
+      {
+      cargar_matriz();              //carga valores de posicion en al matriz
+      aux_fila++;                  //salta a la siguiente fila
+      if(aux_fila>max_filas)        //si ingreso mas sobrepisa en la ultima fila
+      aux_fila=max_filas;
+      }
+    break;
+      
+    case 13:    //Inicio Secuencia
+      #ifdef debug
+      Serial.println("Secuenciando");
+      delay(tiempo_debug);
+      #endif
+      if(modo_carga==1)       //finaliza la carga
+      modo_carga=2;
+    break;
+            
+  }
+}
+
+
+
+//-------------------------------deteccion de limites de variables para servo-------------------------------------
+
+void limites_servo(void)
+{
+   if(variable_servo_base>limite_superior)
+   variable_servo_base=limite_superior;
+  
+    if(variable_servo_base<limite_inferior)
+    variable_servo_base=limite_inferior;
+
+     if(variable_servo_hombro>limite_superior)
+    variable_servo_hombro=limite_superior;
+
+ 
+     if(variable_servo_hombro<limite_inferior)
+    variable_servo_hombro=limite_inferior;
+
+    if(variable_servo_codo>limite_superior)
+    variable_servo_codo=limite_superior;
+  
+     if(variable_servo_codo<limite_inferior)
+    variable_servo_codo=limite_inferior;
+
+     if(variable_servo_munhieca>limite_superior)
+    variable_servo_munhieca=limite_superior;
+
+     if(variable_servo_munhieca<limite_inferior)
+    variable_servo_munhieca=limite_inferior;
+
+    if(variable_servo_pinza>limite_superior)
+   variable_servo_pinza=limite_superior;
+ 
+    if(variable_servo_pinza<limite_inferior)
+   variable_servo_pinza=limite_inferior;
+
+    return;
+
+}
+
+
+//-------------------------incio secuencia--------------------------------------------
+
+void inicio_secuencia(void)
+{
+    if(aux_fila==0)       //significa que no fue cargado ningun valor
+    return;
+    
+    int variable;          //variable auciliar que cree para esta funcion
+  
+    variable=matriz_posiciones[aux_fila2][0];
+    while(variable_servo_base!=variable)
+    {
+      if(variable>variable_servo_base)
+      variable_servo_base++;
+      else
+      variable_servo_base--;
+      movimiento_servos();
+    }
+
+    variable=matriz_posiciones[aux_fila2][1];
+    while(variable_servo_hombro!=variable)
+    {
+      if(variable>variable_servo_hombro)
+      variable_servo_hombro++;
+      else
+      variable_servo_hombro--;
+      movimiento_servos();
+    }
+
+    variable=matriz_posiciones[aux_fila2][2];
+    while(variable_servo_codo!=variable)
+    {
+      if(variable>variable_servo_codo)
+      variable_servo_codo++;
+      else
+      variable_servo_codo--;
+      movimiento_servos();
+    }
+
+    variable=matriz_posiciones[aux_fila2][3];
+    while(variable_servo_munhieca!=variable)
+    {
+      if(variable>variable_servo_munhieca)
+      variable_servo_munhieca++;
+      else
+      variable_servo_munhieca--;
+      movimiento_servos();
+    }
+
+    variable=matriz_posiciones[aux_fila2][4];
+    while(variable_servo_pinza!=variable)
+    {
+      if(variable>variable_servo_pinza)
+      variable_servo_pinza++;
+      else
+      variable_servo_pinza--;
+      movimiento_servos();
+    }
+    
+
+    #ifdef debug
+        Serial.print("base");
+        Serial.print(variable_servo_base);
+        Serial.print("hombro");
+        Serial.print(variable_servo_hombro);
+        Serial.print("codo");
+        Serial.print(variable_servo_codo);
+        Serial.print("munhieca");
+        Serial.print(variable_servo_munhieca);
+        Serial.print("pinza");
+        Serial.print(variable_servo_pinza);
+    #endif
+
+  aux_fila2++;
+  if(aux_fila2>aux_fila-1)
+  aux_fila2=0;
+   
+}
+
+
+//-----------------------------carga valores a la matriz------------------------------------
+
+void cargar_matriz(void)
+{
+
+   limites_servo();
+  
+   matriz_posiciones[aux_fila][0]=variable_servo_base;
+   matriz_posiciones[aux_fila][1]=variable_servo_hombro;
+   matriz_posiciones[aux_fila][2]=variable_servo_codo;
+   matriz_posiciones[aux_fila][3]=variable_servo_munhieca;
+   matriz_posiciones[aux_fila][4]=variable_servo_pinza;
+
+}
+
+
+//-----------------------------------funcion que resetea la matriz----------------------------
+
+void reset_matriz(void)
+{
+
+  for(int i=0; i<max_filas;i++)
+  {
+  matriz_posiciones[i][0]=0;
+  matriz_posiciones[i][1]=0;
+  matriz_posiciones[i][2]=0;
+  matriz_posiciones[i][3]=0;
+  matriz_posiciones[i][4]=0;
+  }
+}
+
+
+//-----------------------------------Movimiento servos--------------------------------------------------
+
+void movimiento_servos(void)
+{
+
+  servo_base.write(variable_servo_base);        //muevo los servos a valor medio de inicio
+  delay(3);
+  servo_hombro.write(variable_servo_hombro);
+  delay(3);
+  servo_codo.write(variable_servo_codo);
+  delay(3);
+  servo_munhieca.write(variable_servo_munhieca);
+  delay(3);
+  servo_pinza.write(variable_servo_pinza);
+  delay(3);
+
+  #ifdef debug
+  Serial.println("Movimiento Servo");
+  delay(tiempo_debug);
+  #endif
+
+}
+
+//-------------------------------------------------------------------------------------
+//                            Funcion lectura Bluetooht
+//-------------------------------------------------------------------------------------
+
+int lectura_bluetooht(void)
+{
+    char c;
+
+     if (Serial.available() > 0)
+      c = Serial.read();
+
+//-------------------------Descomentar esto para tambien tenerlo con Bluetooht-------------------------
+      /*
+    if (BTserial.available())
+      c = BTserial.read();
+      */
+
+//-------------------------------------------------------------------------------------------------------
+
+   if(c=='1')   //mueve la base
+     return 1; 
+   if(c=='2')    //mueve la base
+     return 2; 
+   if(c=='3')   //mueve el hombro
+     return 3; 
+    if(c=='4')    //mueve el hombro
+     return 4; 
+    if(c=='5')    //mueve el codo
+     return 5; 
+   if(c=='6')    //mueve el codo
+     return 6; 
+   if(c=='7')    //mueve la muñeca
+     return 7;  
+   if(c=='8')    //mueve la muñeca
+     return 8; 
+   if(c=='9')    //mueve la pinza
+     return 9; 
+    if(c=='A')    //mueve la pinza
+     return 10; 
+   if(c=='B')    //inicio guardado secuencia
+     return 11; 
+   if(c=='C')    //guardo posiciones
+     return 12; 
+   if(c=='D')    //inicio secuencia
+     return 13; 
+}
